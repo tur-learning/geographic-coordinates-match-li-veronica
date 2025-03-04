@@ -1,0 +1,21 @@
+{
+    "name": "Nolli Mapping DevContainer",
+    "build": {
+      "dockerfile": "Dockerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "mhutchie.git-graph"          
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "python.defaultInterpreterPath": "/usr/local/bin/python"
+            }
+        }
+    },
+    "postCreateCommand": "pip install -r requirements.txt",
+    "remoteUser": "vscode"
+  }
+  
