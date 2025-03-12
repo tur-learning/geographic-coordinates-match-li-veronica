@@ -1,5 +1,6 @@
 # Import necessary functions from utils.py
-from utils import extract_files, load_data, find_best_matches, save_to_json, save_to_geojson
+from utils import extract_files, load_data, find_best_matches, save_to_json, save_to_geojson, find_closest_matches
+from shapely.geometry import shape, Point
 
 ###############################
 # 1) Define the input files
@@ -31,6 +32,7 @@ nolli_file, osm_file = extract_files(zip_file, geojson_files)
 nolli_data = load_data(nolli_file)
 osm_data = load_data(osm_file)
 
+
 ###############################
 # 4) Extract relevant info from Nolli data
 ###############################
@@ -58,27 +60,24 @@ osm_data = load_data(osm_file)
 #   }
 # }
 
-nolli_relevant_data = {} 
 nolli_features = nolli_data["features"]
 
-for feature in nolli_features:
-    # Extract the Nolli Number as the key
-    # Extract the names
-    # Extract the geometry
-    # Store them inside nolli_relevant_data
-    properties = feature.get("properties", {})
-    nolli_number = properties.get("Nolli Number", "")
-    nolli_names = [
-        properties.get("Nolli Name", ""),
-        properties.get("Unravelled Name", ""),
-        properties.get("Modern Name", "")
-    ]
-    geometry = feature.get("geometry", {})
+unmatched_nolli = [
+    feature for feature in nolli_features 
+    if "Match_Score" not in feature["properties"]
+]
 
-    nolli_relevant_data[nolli_number] = {
-        "nolli_names": nolli_names,
-        "nolli_coords": geometry
-    }
+print(f"Found {len(unmatched_nolli)} unmatched Nolli features.")
+
+nolli_features = nolli_data["features"]
+
+unmatched_nolli = [
+    feature for feature in nolli_features 
+    if "Match_Score" not in feature["properties"]
+]
+
+print(f"Found {len(unmatched_nolli)} unmatched Nolli features.")
+
 
 ###############################
 # 5) Fuzzy match with OSM data
@@ -99,19 +98,41 @@ for feature in nolli_features:
 
 print(f"Searching best match for Nolli names:")
 
-counter = 0  # To track the number of successful matches
+counter = 0  
 osm_features = osm_data["features"]
-for nolli_id, values in nolli_relevant_data.items():
-    print(f"\t{nolli_id}\t{values['nolli_names'][0]}")  # Print first name for reference
+osm_centroids = []
+matched_features = [] 
+for feature in osm_features:
+    geom = shape(feature["geometry"]) 
+    if geom.is_empty or not geom.is_valid:
+        continue  
+    if geom.geom_type in ["Point", "Polygon", "MultiPolygon"]:  
+        centroid = geom.centroid  
+    else:
+        centroid = geom.representative_point()
+    osm_centroids.append(([centroid.x, centroid.y], feature))
 
-    names = values['nolli_names']
-    # Get the best match from OSM data
-    match, j = find_best_matches(names, osm_features, threshold=85)
+for nolli in unmatched_nolli:
+    nolli_point = shape(nolli["geometry"])  
+    if not isinstance(nolli_point, Point):
+        nolli_point = nolli_point.centroid  
+    
+    best_match = find_closest_matches([nolli_point], [feature for _, feature in osm_centroids], use_geodesic=False)
 
-    counter += j  # Update match counter
-    nolli_relevant_data[nolli_id]["match"] = match  # Store the match
 
-print(f"MATCHED {counter} NOLLI ENTRIES")
+    if best_match and len(best_match) > 1:
+        nolli["properties"]["Geo_Match"] = best_match[1]["properties"]
+        nolli["properties"]["Geo_Distance"] = best_match[0]
+        matched_features.append(nolli) 
+        matched_features.append(best_match[1]) 
+    else:
+        print(f"No match found for Nolli feature: {nolli['properties'].get('Nolli Number', 'Unknown')}")
+        matched_features.append(nolli) 
+
+    matched_features.append(nolli) 
+    matched_features.append(best_match[1]) 
+
+print("Geospatial matching complete.")
 
 ###############################
 # 6) Save results as JSON and GeoJSON
@@ -124,10 +145,16 @@ print(f"MATCHED {counter} NOLLI ENTRIES")
 # - `save_to_json(nolli_relevant_data, "matched_nolli_features.json")`
 # - `save_to_geojson(nolli_relevant_data, "matched_nolli_features.geojson")`
 
-save_to_json(nolli_relevant_data, "matched_nolli_features.json")
-save_to_geojson(nolli_relevant_data, "matched_nolli_features.geojson")
+save_to_json(unmatched_nolli, "nolli_geographic_match.json")
 
-print("Matching complete. Results saved.")
+geojson_output = {
+    "type": "FeatureCollection",
+    "features": matched_features 
+}
+
+save_to_geojson(geojson_output, "nolli_geographic_match.geojson")
+
+print("Files saved: nolli_geographic_match.json & nolli_geographic_match.geojson")
 
 ###############################
 # 7) Visualization

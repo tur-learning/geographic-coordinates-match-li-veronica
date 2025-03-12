@@ -4,7 +4,7 @@ import zipfile
 import os
 from thefuzz import fuzz, process
 from scipy.spatial import cKDTree
-from shapely.geometry import shape
+from shapely.geometry import shape,Point
 import numpy as np
 from geopy.distance import geodesic
 
@@ -321,7 +321,12 @@ def find_closest_matches(dataset_1, dataset_2, use_geodesic=False):
 
     dataset_1_coords = []
     for feature in dataset_1:
-        dataset_1_coords.append([shape(feature['geometry']).centroid.x, shape(feature['geometry']).centroid.y])
+        if isinstance(feature, Point):
+            geom = feature 
+        else:
+            geom = shape(feature['geometry'])
+        centroid = geom.centroid
+        dataset_1_coords.append([centroid.x, centroid.y])
         
     dataset_2_coords = []
     for feature in dataset_2:
